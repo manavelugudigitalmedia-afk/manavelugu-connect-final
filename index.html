@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="te">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>మన వెలుగు — తెలుగు డిజిటల్ మీడియా</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Arial,"Noto Sans Telugu",sans-serif;background:#f5f5f5;color:#171717}
+header{background:#fdbb05;text-align:center;padding:28px 12px 22px}header h1{margin:0;font-size:44px;font-weight:800}header p{margin:8px 0 0;font-size:20px}
+nav{background:#111;color:#fff;display:flex;overflow-x:auto;white-space:nowrap;scrollbar-width:none}nav::-webkit-scrollbar{display:none}
+nav button{border:0;background:transparent;color:#fff;padding:15px 20px;font-size:20px;font-family:inherit;cursor:pointer}nav button:hover{background:#333}
+main{max-width:900px;margin:auto;padding:28px 18px 80px}h2{font-size:34px;margin:0 0 22px}
+.card{background:#fff;border-radius:18px;padding:24px;margin:0 0 18px;box-shadow:0 2px 10px #0000000d}.card h3{font-size:29px;margin:0 0 12px;line-height:1.35}.card p{font-size:19px;line-height:1.75;margin:0}.meta{font-size:14px;color:#777;margin:0 0 10px}
+#status{text-align:center;color:#777;padding:20px}.error{color:#b00020;background:#fff0f0;padding:14px;border-radius:10px}
+button.action{background:#111;color:#fff;border:0;border-radius:8px;padding:10px 16px;font-size:16px;cursor:pointer}
+.modal{position:fixed;inset:0;background:#000b;display:none;z-index:20;padding:10px}.modal.open{display:flex;align-items:center;justify-content:center}
+.viewer{background:#fff;width:min(1100px,100%);height:min(95vh,900px);border-radius:12px;overflow:hidden;display:flex;flex-direction:column}
+.viewerbar{display:flex;gap:8px;align-items:center;padding:10px;background:#111;color:#fff}.viewerbar button{border:0;background:#333;color:#fff;border-radius:7px;padding:9px 12px}.viewerbar .title{flex:1;font-size:17px}
+iframe{width:100%;height:100%;border:0;flex:1}.connect{background:#fff;border-radius:15px;padding:20px;margin-bottom:25px}.connect input{width:100%;padding:12px;margin:7px 0;border:1px solid #ccc;border-radius:7px;font-size:16px}
+@media(max-width:600px){header h1{font-size:38px}header p{font-size:17px}nav button{font-size:18px;padding:13px 17px}.card h3{font-size:25px}}
+
+#pdfArea{position:relative;overflow:auto;flex:1;background:#777;display:flex;justify-content:center;align-items:flex-start;padding:12px}
+#pdfCanvas{background:#fff;max-width:none;box-shadow:0 2px 8px #0006}
+#cropBox{position:absolute;display:none;border:3px dashed #f00;background:#ff0a;pointer-events:none}
+#cropHint{padding:8px;text-align:center;background:#fff;color:#444;font-size:14px}
+.viewerbar{flex-wrap:wrap}
+@media(max-width:600px){.viewerbar button{padding:7px 9px}.viewerbar .title{min-width:110px}}
+</style>
+</head>
+<body>
+<header><h1>మన వెలుగు</h1><p>తెలుగు దినపత్రిక • ప్రతి అక్షరం జనం కోసం</p></header>
+<nav id="nav"></nav>
+<main>
+<section id="connectBox" class="connect">
+<b>Supabase Connect</b>
+<input id="projectUrl" placeholder="Supabase Project URL">
+<input id="publishableKey" placeholder="sb_publishable_...">
+<button class="action" onclick="connect()">Connect</button>
+<div id="connectMsg" style="margin-top:8px"></div>
+</section>
+<h2 id="heading">తాజా వార్తలు</h2>
+<div id="status">Loading...</div>
+<div id="news"></div>
+</main>
+
+
+<div id="viewerModal" class="modal">
+ <div class="viewer">
+  <div class="viewerbar">
+   <button onclick="closeViewer()">✕ Close</button>
+   <div class="title" id="viewerTitle">మన వెలుగు ePaper</div>
+   <button onclick="prevPage()">◀</button>
+   <span id="pageInfo">1 / 1</span>
+   <button onclick="nextPage()">▶</button>
+   <button onclick="zoom(-0.15)">−</button>
+   <button onclick="zoom(0.15)">+</button>
+   <button onclick="toggleCrop()">✂ Crop</button>
+   <button onclick="downloadCrop()">Share Crop</button>
+  </div>
+  <div id="pdfArea">
+    <canvas id="pdfCanvas"></canvas>
+    <div id="cropBox"></div>
+  </div>
+  <div id="cropHint">Crop నొక్కి, పేజీలో కావాల్సిన భాగాన్ని డ్రాగ్ చేయండి.</div>
+ </div>
+</div>
+
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>
+let pdfjsLib=window.pdfjsLib, pdfDoc=null, currentPage=1, scale=1.15, cropMode=false, pdfCanvas, pdfCtx, currentPdfUrl="";
+pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+const defaultUrl="https://atxfxdtxvdmldlwnqfyo.supabase.co";
+let base=localStorage.getItem("mv_project_url")||defaultUrl;
+let key=localStorage.getItem("mv_publishable_key")||"";
+const cats=["ePaper","రాజకీయాలు","తెలంగాణ","ఖమ్మం","దేశం","స్పోర్ట్స్","సినిమా","బిజినెస్","హెల్త్","విద్య","ఉద్యోగాలు","క్రైమ్","లైఫ్‌స్టైల్","ఆధ్యాత్మికం","ఫోటోలు","వీడియోలు"];
+let current="తాజా వార్తలు";
+
+function navBuild(){
+ const n=document.getElementById("nav"); n.innerHTML="";
+ cats.forEach(c=>{const b=document.createElement("button");b.textContent=c;b.onclick=()=>c==="ePaper"?loadEPaper():loadCategory(c);n.appendChild(b)});
+}
+function connect(){
+ const u=document.getElementById("projectUrl").value.trim().replace(/\/rest\/v1\/?$/,"").replace(/\/$/,"");
+ const k=document.getElementById("publishableKey").value.trim();
+ if(!u||!k||!k.startsWith("sb_publishable_")){document.getElementById("connectMsg").innerHTML='<span class="error">Project URL మరియు sb_publishable_ Publishable Key ఇవ్వండి.</span>';return}
+ localStorage.setItem("mv_project_url",u);localStorage.setItem("mv_publishable_key",k);base=u;key=k;
+ document.getElementById("connectBox").style.display="none"; loadNews();
+}
+async function api(path,params=""){
+ const r=await fetch(base+"/rest/v1/"+path+params,{headers:{apikey:key,Authorization:"Bearer "+key}});
+ if(!r.ok) throw new Error(await r.text());
+ return r.json();
+}
+function esc(s){return String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]))}
+async function loadNews(cat=""){
+ current=cat||"తాజా వార్తలు";document.getElementById("heading").textContent=current;
+ document.getElementById("status").textContent="Loading...";document.getElementById("news").innerHTML="";
+ try{
+  let q="?select=*&status=eq.published&order=published_at.desc";
+  if(cat) q+="&category=eq."+encodeURIComponent(cat);
+  const rows=await api("news",q);
+  document.getElementById("status").style.display=rows.length?"none":"block";
+  document.getElementById("status").textContent=rows.length?"":"ఈ విభాగంలో వార్తలు లేవు.";
+  document.getElementById("news").innerHTML=rows.map(x=>`<article class="card"><div class="meta">${esc(x.location||"మన వెలుగు")} ${x.published_at?"• "+new Date(x.published_at).toLocaleString("te-IN"):""}</div><h3>${esc(x.title)}</h3><p>${esc(x.content||"")}</p></article>`).join("");
+ }catch(e){document.getElementById("status").innerHTML='<div class="error">News load failed. Admin/Connect settings check చేయండి.</div>'}
+}
+async function loadCategory(c){loadNews(c)}
+async function loadEPaper(){
+ document.getElementById("heading").textContent="ePaper";
+ document.getElementById("status").textContent="Loading ePaper...";
+ document.getElementById("status").style.display="block";document.getElementById("news").innerHTML="";
+ try{
+  const rows=await api("epapers","?select=*&status=eq.published&order=created_at.desc");
+  document.getElementById("status").style.display=rows.length?"none":"block";
+  document.getElementById("status").textContent=rows.length?"":"ePaper అందుబాటులో లేదు.";
+  document.getElementById("news").innerHTML=rows.map(x=>{
+    const raw=x.pdf_url||x.file_url||x.pdf_path||x.file_path||x.storage_path||x.url||x.pdf||"";
+    const pdf=resolvePdfUrl(raw);
+    return `<article class="card"><div class="meta">${esc(x.edition||"Edition")} ${x.paper_date?"• "+esc(x.paper_date):""}</div><h3>${esc(x.title||"మన వెలుగు ePaper")}</h3><button class="action" onclick='openPdf(${JSON.stringify(pdf)},${JSON.stringify(x.title||"మన వెలుగు ePaper")})'>ePaper Open</button></article>`;
+  }).join("");
+ }catch(e){document.getElementById("status").innerHTML='<div class="error">ePaper load failed. Supabase epapers table/policy check చేయండి.</div>'}
+}
+function openPdf(url,title){
+ if(!url){alert("PDF link లేదు.");return}
+ document.getElementById("viewerTitle").textContent=title;
+ document.getElementById("pdfFrame").src=url;
+ document.getElementById("viewerModal").classList.add("open");
+}
+function closeViewer(){document.getElementById("pdfFrame").src="";document.getElementById("viewerModal").classList.remove("open")}
+navBuild();
+if(key){document.getElementById("connectBox").style.display="none";loadNews()}else{
+ document.getElementById("projectUrl").value=defaultUrl;
+ document.getElementById("connectMsg").textContent="Publishable Key connect చేయండి.";
+ loadNews();
+}
+</script>
+</body></html>
