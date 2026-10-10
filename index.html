@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="te"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>మన వెలుగు డిజిటల్ మీడియా</title>
+<meta name="mv-crop-build" content="2026-10-10-crop-overlay-v2">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
 *{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;background:#f5f5f5;color:#171717}header{background:#f7b900;text-align:center;padding:14px;border-bottom:3px solid #111}.logo{font-size:30px;font-weight:800}.tag{font-size:13px;font-weight:bold}nav{background:#111;display:flex;overflow-x:auto;white-space:nowrap}nav button{background:none;border:0;color:#fff;padding:13px;font-size:15px;flex:0 0 auto}nav button.active{background:#f7b900;color:#111}.wrap{max-width:1000px;margin:auto;padding:14px}.box{background:#fff;padding:15px;border-radius:10px;margin-bottom:12px}.box input,.box select{width:100%;padding:10px;margin:5px 0;border:1px solid #ccc;border-radius:7px}.btn{padding:10px 13px;border:0;border-radius:7px;background:#111;color:#fff;cursor:pointer}.paper{padding:14px 0;border-bottom:1px solid #ddd;overflow:auto}.paper button{float:right;margin-left:8px}#viewer{display:none;position:fixed;inset:0;background:#171717;z-index:99;color:#fff}.tools{min-height:55px;background:#222;display:flex;gap:5px;align-items:center;padding:7px;overflow:auto;flex-wrap:wrap}.tools button{background:#333;color:#fff;border:1px solid #555;padding:8px;white-space:nowrap}.stage{position:absolute;top:65px;bottom:0;left:0;right:0;overflow:auto;text-align:center;padding:12px}.stage canvas{background:#fff;max-width:none}.title{font-weight:bold;white-space:nowrap}#crop{display:none;position:fixed;left:0;top:0;width:100vw;height:100dvh;touch-action:none;z-index:101;pointer-events:auto;max-width:none}.hint{display:none;position:fixed;bottom:10px;left:10px;right:10px;background:#111e;padding:10px;border-radius:8px;z-index:102}#status{color:#555;font-size:14px;margin-top:8px}
@@ -36,42 +37,47 @@ function closeViewer(){$('viewer').style.display='none';$('crop').style.display=
 function prev(){if(pdfDoc&&pageNum>1){pageNum--;renderPage()}}function next(){if(pdfDoc&&pageNum<pdfDoc.numPages){pageNum++;renderPage()}}function zoom(delta){if(pdfDoc){scale=Math.max(.4,Math.min(3,scale+delta));renderPage()}}function fit(){if(!pdfDoc)return;pdfDoc.getPage(pageNum).then(p=>{const v=p.getViewport({scale:1});scale=Math.min((innerWidth-30)/v.width,(innerHeight-90)/v.height);renderPage()})}
 $('closeBtn').onclick=closeViewer;$('prevBtn').onclick=prev;$('nextBtn').onclick=next;$('minusBtn').onclick=()=>zoom(-.2);$('plusBtn').onclick=()=>zoom(.2);$('fitBtn').onclick=fit;$('cropBtn').onclick=cropMode;$('shareBtn').onclick=share;$('printBtn').onclick=()=>{if(pdfDoc)window.print()};
 function cropMode(){
- if(!pdfDoc)return;
+ if(!pdfDoc){alert('ముందుగా ePaper తెరవండి.');return;}
  const overlay=$('crop'),src=$('pdfCanvas'),hint=$('hint');
- // Make the touch canvas cover the complete visible browser viewport.
- overlay.style.display='block';overlay.style.position='fixed';overlay.style.left='0px';overlay.style.top='0px';
- overlay.style.width=window.innerWidth+'px';overlay.style.height=window.innerHeight+'px';
- overlay.width=window.innerWidth;overlay.height=window.innerHeight;
- overlay.style.touchAction='none';overlay.style.zIndex='101';overlay.style.pointerEvents='auto';
- const ctx=overlay.getContext('2d');hint.style.display='block';
+ // Put the overlay directly under body to avoid the PDF viewer's stacking/scroll layers.
+ if(overlay.parentElement!==document.body)document.body.appendChild(overlay);
+ overlay.style.cssText='display:block;position:fixed;inset:0;width:100vw;height:100dvh;z-index:2147483647;pointer-events:auto;touch-action:none;max-width:none;margin:0;padding:0;border:0;background:transparent;';
+ overlay.width=Math.round(window.innerWidth* (window.devicePixelRatio||1));
+ overlay.height=Math.round(window.innerHeight* (window.devicePixelRatio||1));
+ const ctx=overlay.getContext('2d');
+ ctx.setTransform(window.devicePixelRatio||1,0,0,window.devicePixelRatio||1,0,0);
+ hint.style.display='block';hint.style.zIndex='2147483647';
+ hint.textContent='వార్త భాగంపై వేలితో నొక్కి, వదలకుండా లాగండి. పసుపు బాక్స్ కనిపించిన తర్వాత వదలండి.';
  let start=null,current=null;
- const point=e=>({x:Math.max(0,Math.min(overlay.width,e.clientX)),y:Math.max(0,Math.min(overlay.height,e.clientY))});
- function drawSelection(a,b){
-   ctx.clearRect(0,0,overlay.width,overlay.height);if(!a||!b)return;
-   const x=Math.min(a.x,b.x),y=Math.min(a.y,b.y),w=Math.abs(a.x-b.x),h=Math.abs(a.y-b.y);
-   ctx.fillStyle='rgba(0,0,0,.45)';ctx.fillRect(0,0,overlay.width,overlay.height);
-   ctx.clearRect(x,y,w,h);ctx.strokeStyle='#f7b900';ctx.lineWidth=3;ctx.setLineDash([8,5]);ctx.strokeRect(x,y,w,h);ctx.setLineDash([]);
-   // visible corner handles make the crop box obvious on mobile
-   ctx.fillStyle='#f7b900';const z=9;[[x,y],[x+w,y],[x,y+h],[x+w,y+h]].forEach(([cx,cy])=>ctx.fillRect(cx-z/2,cy-z/2,z,z));
+ const point=e=>({x:Math.max(0,Math.min(window.innerWidth,e.clientX)),y:Math.max(0,Math.min(window.innerHeight,e.clientY))});
+ function draw(a,b){
+  ctx.clearRect(0,0,window.innerWidth,window.innerHeight);if(!a||!b)return;
+  const x=Math.min(a.x,b.x),y=Math.min(a.y,b.y),w=Math.abs(a.x-b.x),h=Math.abs(a.y-b.y);
+  ctx.fillStyle='rgba(0,0,0,.48)';ctx.fillRect(0,0,window.innerWidth,window.innerHeight);
+  ctx.clearRect(x,y,w,h);ctx.strokeStyle='#f7b900';ctx.lineWidth=3;ctx.setLineDash([8,5]);ctx.strokeRect(x,y,w,h);ctx.setLineDash([]);
+  ctx.fillStyle='#f7b900';const z=12;[[x,y],[x+w,y],[x,y+h],[x+w,y+h]].forEach(([cx,cy])=>ctx.fillRect(cx-z/2,cy-z/2,z,z));
  }
- overlay.onpointerdown=e=>{e.preventDefault();e.stopPropagation();start=point(e);current=start;try{overlay.setPointerCapture(e.pointerId)}catch(_){}drawSelection(start,current)};
- overlay.onpointermove=e=>{if(!start)return;e.preventDefault();e.stopPropagation();current=point(e);drawSelection(start,current)};
+ overlay.onpointerdown=e=>{if(e.pointerType==='mouse'&&e.button!==0)return;e.preventDefault();e.stopPropagation();start=point(e);current=start;try{overlay.setPointerCapture(e.pointerId)}catch(_){}draw(start,current)};
+ overlay.onpointermove=e=>{if(!start)return;e.preventDefault();e.stopPropagation();current=point(e);draw(start,current)};
  overlay.onpointerup=async e=>{
-   if(!start)return;e.preventDefault();e.stopPropagation();current=point(e);const a=start,b=current;start=null;current=null;
-   const rect=src.getBoundingClientRect();
-   const left=Math.max(rect.left,Math.min(a.x,b.x)),top=Math.max(rect.top,Math.min(a.y,b.y));
-   const right=Math.min(rect.right,Math.max(a.x,b.x)),bottom=Math.min(rect.bottom,Math.max(a.y,b.y));
-   ctx.clearRect(0,0,overlay.width,overlay.height);
-   if(right-left<12||bottom-top<12){overlay.style.display='none';hint.style.display='none';alert('Crop చేయడానికి PDFపై వేళ్లతో లాగి పెద్ద బాక్స్ ఎంచుకోండి.');return;}
-   const sx=(left-rect.left)*src.width/rect.width,sy=(top-rect.top)*src.height/rect.height;
-   const sw=(right-left)*src.width/rect.width,sh=(bottom-top)*src.height/rect.height;
-   const footer=48,factor=Math.min(1,1200/sw,(1600-footer)/sh),outW=Math.max(1,Math.round(sw*factor)),outH=Math.max(1,Math.round(sh*factor));
-   const out=document.createElement('canvas');out.width=outW;out.height=outH+footer;const q=out.getContext('2d');
-   q.fillStyle='#fff';q.fillRect(0,0,out.width,out.height);q.drawImage(src,sx,sy,sw,sh,0,0,outW,outH);
-   q.fillStyle='#f7b900';q.fillRect(0,outH,outW,footer);q.fillStyle='#111';q.font='bold 17px Arial';q.fillText('మన వెలుగు',10,outH+20);q.font='12px Arial';q.fillText('manavelugunews.in',10,outH+38);
-   cropBlob=await new Promise(resolve=>out.toBlob(resolve,'image/jpeg',0.9));overlay.style.display='none';hint.style.display='none';alert('Crop సిద్ధమైంది. ఇప్పుడు Share నొక్కండి.');
+  if(!start)return;e.preventDefault();e.stopPropagation();current=point(e);const a=start,b=current;start=null;current=null;
+  const width=Math.abs(a.x-b.x),height=Math.abs(a.y-b.y);
+  if(width<20||height<20){ctx.clearRect(0,0,window.innerWidth,window.innerHeight);alert('బాక్స్ కనిపించాలంటే PDFపై వేలితో నొక్కి, వదలకుండా కనీసం కొంత దూరం లాగండి.');return;}
+  const r=src.getBoundingClientRect();
+  const left=Math.max(r.left,Math.min(a.x,b.x)),top=Math.max(r.top,Math.min(a.y,b.y));
+  const right=Math.min(r.right,Math.max(a.x,b.x)),bottom=Math.min(r.bottom,Math.max(a.y,b.y));
+  if(right-left<20||bottom-top<20){ctx.clearRect(0,0,window.innerWidth,window.innerHeight);alert('PDF పేజీ లోపల మాత్రమే బాక్స్ ఎంచుకోండి.');return;}
+  const sx=(left-r.left)*src.width/r.width,sy=(top-r.top)*src.height/r.height,sw=(right-left)*src.width/r.width,sh=(bottom-top)*src.height/r.height;
+  const footer=52,factor=Math.min(1,1200/sw,(1600-footer)/sh),outW=Math.max(1,Math.round(sw*factor)),outH=Math.max(1,Math.round(sh*factor));
+  const out=document.createElement('canvas');out.width=outW;out.height=outH+footer;const q=out.getContext('2d');
+  q.fillStyle='#fff';q.fillRect(0,0,out.width,out.height);q.drawImage(src,sx,sy,sw,sh,0,0,outW,outH);
+  q.fillStyle='#f7b900';q.fillRect(0,outH,outW,footer);q.fillStyle='#111';q.font='bold 17px Arial';q.fillText('మన వెలుగు',10,outH+21);q.font='12px Arial';q.fillText('manavelugunews.in',10,outH+40);
+  cropBlob=await new Promise(resolve=>out.toBlob(resolve,'image/jpeg',0.92));
+  overlay.style.display='none';hint.style.display='none';
+  if(!cropBlob){alert('Crop చిత్రం తయారు కాలేదు. మళ్లీ ప్రయత్నించండి.');return;}
+  alert('Crop సిద్ధమైంది. ఇప్పుడు Share నొక్కండి.');
  };
- overlay.onpointercancel=()=>{start=null;current=null;ctx.clearRect(0,0,overlay.width,overlay.height);overlay.style.display='none';hint.style.display='none'};
+ overlay.onpointercancel=()=>{start=null;current=null;ctx.clearRect(0,0,window.innerWidth,window.innerHeight);overlay.style.display='none';hint.style.display='none'};
 }
 
 async function share(){if(!cropBlob){alert('ముందుగా Crop చేయండి.');return}const file=new File([cropBlob],'manavelugu-crop.jpg',{type:'image/jpeg'});if(navigator.canShare&&navigator.canShare({files:[file]})){try{await navigator.share({title:'మన వెలుగు',files:[file]});return}catch(e){}}const a=document.createElement('a');a.href=URL.createObjectURL(cropBlob);a.download='manavelugu-crop.jpg';a.click()}
