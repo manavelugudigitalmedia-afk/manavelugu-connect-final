@@ -38,9 +38,9 @@ $('closeBtn').onclick=closeViewer;$('prevBtn').onclick=prev;$('nextBtn').onclick
 function cropMode(){
  if(!pdfDoc)return;
  const overlay=$('crop'),src=$('pdfCanvas'),hint=$('hint');
- overlay.style.display='block';overlay.width=window.innerWidth;overlay.height=window.innerHeight;
+ overlay.style.display='block';overlay.style.pointerEvents='none';overlay.width=window.innerWidth;overlay.height=window.innerHeight;
  overlay.style.left='0';overlay.style.top='0';
- const ctx=overlay.getContext('2d');hint.style.display='block';
+ const ctx=overlay.getContext('2d');hint.style.display='block';setTimeout(()=>{if(overlay.style.display==='block')overlay.style.pointerEvents='auto'},250);
  let start=null,current=null;
  const point=e=>({x:e.clientX,y:e.clientY});
  function drawSelection(a,b){
