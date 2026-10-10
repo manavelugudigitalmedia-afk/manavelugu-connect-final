@@ -35,7 +35,38 @@ async function renderPage(){if(!pdfDoc)return;const p=await pdfDoc.getPage(pageN
 function closeViewer(){$('viewer').style.display='none';$('crop').style.display='none';$('hint').style.display='none';pdfDoc=null;cropBlob=null}
 function prev(){if(pdfDoc&&pageNum>1){pageNum--;renderPage()}}function next(){if(pdfDoc&&pageNum<pdfDoc.numPages){pageNum++;renderPage()}}function zoom(delta){if(pdfDoc){scale=Math.max(.4,Math.min(3,scale+delta));renderPage()}}function fit(){if(!pdfDoc)return;pdfDoc.getPage(pageNum).then(p=>{const v=p.getViewport({scale:1});scale=Math.min((innerWidth-30)/v.width,(innerHeight-90)/v.height);renderPage()})}
 $('closeBtn').onclick=closeViewer;$('prevBtn').onclick=prev;$('nextBtn').onclick=next;$('minusBtn').onclick=()=>zoom(-.2);$('plusBtn').onclick=()=>zoom(.2);$('fitBtn').onclick=fit;$('cropBtn').onclick=cropMode;$('shareBtn').onclick=share;$('printBtn').onclick=()=>{if(pdfDoc)window.print()};
-function cropMode(){if(!pdfDoc)return;const c=$('crop'),stage=$('stage');c.style.display='block';c.width=innerWidth;c.height=innerHeight;c.style.left='0';c.style.top='0';$('hint').style.display='block';c.onpointerdown=e=>{cropStart={x:e.clientX,y:e.clientY};c.setPointerCapture(e.pointerId)};c.onpointerup=async e=>{if(!cropStart)return;const start=cropStart;cropStart=null;const r=$('pdfCanvas').getBoundingClientRect(),x=Math.max(r.left,Math.min(start.x,e.clientX)),y=Math.max(r.top,Math.min(start.y,e.clientY)),x2=Math.min(r.right,Math.max(start.x,e.clientX)),y2=Math.min(r.bottom,Math.max(start.y,e.clientY));if(x2-x<10||y2-y<10){c.style.display='none';return}const src=$('pdfCanvas'),sx=(x-r.left)*src.width/r.width,sy=(y-r.top)*src.height/r.height,sw=(x2-x)*src.width/r.width,sh=(y2-y)*src.height/r.height,o=document.createElement('canvas');o.width=Math.round(sw);o.height=Math.round(sh+58);const q=o.getContext('2d');q.drawImage(src,sx,sy,sw,sh,0,0,sw,sh);q.fillStyle='#f7b900';q.fillRect(0,sh,sw,58);q.fillStyle='#111';q.font='bold 20px Arial';q.fillText('మన వెలుగు',10,sh+25);q.font='13px Arial';q.fillText('manavelugunews.in',10,sh+45);cropBlob=await new Promise(resolve=>o.toBlob(resolve,'image/png'));c.style.display='none';$('hint').style.display='none';alert('Crop సిద్ధంగా ఉంది. Share నొక్కండి.')};}
-async function share(){if(!cropBlob){alert('ముందుగా Crop చేయండి.');return}const file=new File([cropBlob],'manavelugu-crop.png',{type:'image/png'});if(navigator.canShare&&navigator.canShare({files:[file]})){try{await navigator.share({title:'మన వెలుగు',files:[file]});return}catch(e){}}const a=document.createElement('a');a.href=URL.createObjectURL(cropBlob);a.download='manavelugu-crop.png';a.click()}
+function cropMode(){
+ if(!pdfDoc)return;
+ const overlay=$('crop'),src=$('pdfCanvas'),hint=$('hint');
+ overlay.style.display='block';overlay.width=window.innerWidth;overlay.height=window.innerHeight;
+ overlay.style.left='0';overlay.style.top='0';
+ const ctx=overlay.getContext('2d');hint.style.display='block';
+ let start=null,current=null;
+ const point=e=>({x:e.clientX,y:e.clientY});
+ function drawSelection(a,b){
+   ctx.clearRect(0,0,overlay.width,overlay.height);if(!a||!b)return;
+   const x=Math.min(a.x,b.x),y=Math.min(a.y,b.y),w=Math.abs(a.x-b.x),h=Math.abs(a.y-b.y);
+   ctx.fillStyle='rgba(0,0,0,.22)';ctx.fillRect(0,0,overlay.width,overlay.height);
+   ctx.clearRect(x,y,w,h);ctx.strokeStyle='#f7b900';ctx.lineWidth=3;ctx.setLineDash([8,5]);ctx.strokeRect(x,y,w,h);ctx.setLineDash([]);
+ }
+ overlay.onpointerdown=e=>{e.preventDefault();start=point(e);current=start;overlay.setPointerCapture(e.pointerId);drawSelection(start,current)};
+ overlay.onpointermove=e=>{if(!start)return;e.preventDefault();current=point(e);drawSelection(start,current)};
+ overlay.onpointerup=async e=>{
+   if(!start)return;e.preventDefault();current=point(e);const a=start,b=current;start=null;current=null;ctx.clearRect(0,0,overlay.width,overlay.height);
+   const rect=src.getBoundingClientRect();
+   const left=Math.max(rect.left,Math.min(a.x,b.x)),top=Math.max(rect.top,Math.min(a.y,b.y));
+   const right=Math.min(rect.right,Math.max(a.x,b.x)),bottom=Math.min(rect.bottom,Math.max(a.y,b.y));
+   if(right-left<12||bottom-top<12){overlay.style.display='none';hint.style.display='none';alert('చిన్న భాగం ఎంచుకున్నారు. మళ్లీ Crop నొక్కి పెద్దగా లాగండి.');return;}
+   const sx=(left-rect.left)*src.width/rect.width,sy=(top-rect.top)*src.height/rect.height;
+   const sw=(right-left)*src.width/rect.width,sh=(bottom-top)*src.height/rect.height;
+   const footer=48,factor=Math.min(1,1200/sw,(1600-footer)/sh),outW=Math.max(1,Math.round(sw*factor)),outH=Math.max(1,Math.round(sh*factor));
+   const out=document.createElement('canvas');out.width=outW;out.height=outH+footer;const q=out.getContext('2d');
+   q.fillStyle='#fff';q.fillRect(0,0,out.width,out.height);q.drawImage(src,sx,sy,sw,sh,0,0,outW,outH);
+   q.fillStyle='#f7b900';q.fillRect(0,outH,outW,footer);q.fillStyle='#111';q.font='bold 17px Arial';q.fillText('మన వెలుగు',10,outH+20);q.font='12px Arial';q.fillText('manavelugunews.in',10,outH+38);
+   cropBlob=await new Promise(resolve=>out.toBlob(resolve,'image/jpeg',0.88));overlay.style.display='none';hint.style.display='none';alert('మీరు ఎంచుకున్న భాగం Crop అయింది. Share నొక్కండి.');
+ };
+ overlay.onpointercancel=()=>{start=null;current=null;ctx.clearRect(0,0,overlay.width,overlay.height);overlay.style.display='none';hint.style.display='none'};
+}
+async function share(){if(!cropBlob){alert('ముందుగా Crop చేయండి.');return}const file=new File([cropBlob],'manavelugu-crop.jpg',{type:'image/jpeg'});if(navigator.canShare&&navigator.canShare({files:[file]})){try{await navigator.share({title:'మన వెలుగు',files:[file]});return}catch(e){}}const a=document.createElement('a');a.href=URL.createObjectURL(cropBlob);a.download='manavelugu-crop.jpg';a.click()}
 if(localStorage.getItem('mv_publishable_key')){loadPapers();loadNews('')}else{$('papers').textContent='Publishable Key ఇవ్వండి, తర్వాత Connect నొక్కండి.';$('news').textContent='వార్తలు చూడటానికి Publishable Keyతో Connect చేయండి.'}
 </script></body></html>
